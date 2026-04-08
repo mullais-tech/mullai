@@ -195,6 +195,52 @@ function OperationsTab({ customers, overrides, selDate, setSelDate, onSaveOverri
   );
 }
 
+// REPORTS (separate component for hooks)
+function ReportsTab({ customers, overrides, invoices, prices, reportDate, setReportDate, reportDateEnd, setReportDateEnd, reportTab, setReportTab }) {
+  var repKitchen = useMemo(function() {
+    var d = { veg: 0, nonveg: 0, chapathi: 0, total: 0, details: [] };
+    customers.forEach(function(c) {
+      var counts = getCounts(c, reportDate, overrides);
+      var t = totalMeals(counts);
+      d.veg += counts.veg; d.nonveg += counts.nonveg; d.chapathi += counts.chapathi; d.total += t;
+      d.details.push(Object.assign({}, c, { counts: counts, totalMeals: t }));
+    });
+    return d;
+  }, [customers, reportDate, overrides]);
+
+  var routeGroupsReport = useMemo(function() {
+    var g = {};
+    customers.forEach(function(c) {
+      if (!g[c.route]) g[c.route] = [];
+      var counts = getCounts(c, reportDate, overrides);
+      g[c.route].push(Object.assign({}, c, { counts: counts, totalMeals: totalMeals(counts) }));
+    });
+    return g;
+  }, [customers, reportDate, overrides]);
+
+  var RTYPES = ["Kitchen", "Billing", "Customer", "Delivery", "Route", "Payments"];
+
+  return (<div>
+    <Header>Reports</Header>
+    <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>{RTYPES.map(function(r){return <Btn key={r} small primary={reportTab===r} onClick={function(){setReportTab(r)}}>{r}</Btn>})}</div>
+    <div style={{ display: "flex", gap: 12, marginBottom: 20, alignItems: "center", flexWrap: "wrap" }}>
+      <Inp label="Date" value={reportDate} onChange={setReportDate} type="date" />
+      {(reportTab === "Billing" || reportTab === "Payments") && <Inp label="To" value={reportDateEnd} onChange={setReportDateEnd} type="date" />}
+    </div>
+    {reportTab === "Kitchen" && <div>
+      {isSunday(reportDate) && <div style={{ padding: "12px 20px", background: C.red+"15", borderRadius: 10, marginBottom: 16, color: C.red, fontSize: 13, fontWeight: 600 }}>Sunday - No deliveries</div>}
+      <div style={{ display: "flex", gap: 16, marginBottom: 20, flexWrap: "wrap" }}><Stat label="Total" value={repKitchen.total} accent={C.accent} /><Stat label="Veg" value={repKitchen.veg} accent={C.green} /><Stat label="NV" value={repKitchen.nonveg} accent={C.red} /><Stat label="Ch" value={repKitchen.chapathi} accent={C.accent} /></div>
+      <Tbl columns={[{key:"id",label:"ID",render:function(v){return <Badge>{v}</Badge>}},{key:"name",label:"Office",render:function(v){return <span style={{fontWeight:600}}>{v}</span>}},{key:"counts",label:"V",render:function(v){return <span style={{color:C.green,fontWeight:700,fontFamily:"'DM Mono', monospace"}}>{v.veg}</span>}},{key:"_nv",label:"NV",render:function(v,r){return <span style={{color:C.red,fontWeight:700,fontFamily:"'DM Mono', monospace"}}>{r.counts.nonveg}</span>}},{key:"_ch",label:"Ch",render:function(v,r){return <span style={{color:C.accent,fontWeight:700,fontFamily:"'DM Mono', monospace"}}>{r.counts.chapathi}</span>}},{key:"totalMeals",label:"Total",render:function(v){return <span style={{fontWeight:700,fontFamily:"'DM Mono', monospace"}}>{v}</span>}},{key:"route",label:"Route"}]} data={repKitchen.details} />
+      <div style={{marginTop:12}}><Btn onClick={function(){exportCSV("kitchen_"+reportDate+".csv",["ID","Office","Veg","NV","Ch","Total","Route"],repKitchen.details.map(function(c){return [c.id,c.name,c.counts.veg,c.counts.nonveg,c.counts.chapathi,c.totalMeals,c.route]}))}}><Ico d={ICON.dl} s={14} /> Export</Btn></div>
+    </div>}
+    {reportTab === "Billing" && <Tbl columns={[{key:"id",label:"Invoice"},{key:"customer_id",label:"Customer",render:function(v){var c=customers.find(function(x){return x.id===v});return c?c.name:v}},{key:"period_label",label:"Period"},{key:"amount",label:"Amount",render:function(v){return toINR(v)}},{key:"status",label:"Status",render:function(v){return <Badge color={v==="Paid"?C.green:C.red}>{v}</Badge>}}]} data={invoices} />}
+    {reportTab === "Customer" && <Tbl columns={[{key:"id",label:"ID"},{key:"name",label:"Name"},{key:"route",label:"Route"},{key:"default_veg",label:"V",render:function(v){return v||0}},{key:"default_nonveg",label:"NV",render:function(v){return v||0}},{key:"default_chapathi",label:"Ch",render:function(v){return v||0}},{key:"billing_cycle",label:"Cycle"},{key:"no_saturday",label:"Sat Off",render:function(v){return v?<Badge color={C.purple}>Yes</Badge>:"-"}}]} data={customers} />}
+    {reportTab === "Delivery" && <Tbl columns={[{key:"id",label:"ID"},{key:"name",label:"Office"},{key:"route",label:"Route"},{key:"counts",label:"Meals",render:function(v){return <MealCounts counts={v} />}},{key:"totalMeals",label:"Total",render:function(v){return <span style={{fontWeight:700,fontFamily:"'DM Mono', monospace"}}>{v}</span>}}]} data={repKitchen.details} />}
+    {reportTab === "Route" && Object.entries(routeGroupsReport).map(function(e){return (<Card key={e[0]} style={{marginBottom:16}}><div style={{fontWeight:700,marginBottom:12}}>{e[0]+" - "+e[1].length+" customers | "+e[1].reduce(function(s,c){return s+c.totalMeals},0)+" meals"}</div><Tbl columns={[{key:"name",label:"Office"},{key:"counts",label:"Meals",render:function(v){return <MealCounts counts={v} />}},{key:"totalMeals",label:"Total"}]} data={e[1]} /></Card>)})}
+    {reportTab === "Payments" && <Tbl columns={[{key:"id",label:"Invoice"},{key:"customer_id",label:"Customer",render:function(v){var c=customers.find(function(x){return x.id===v});return c?c.name:v}},{key:"amount",label:"Amount",render:function(v){return <span style={{fontWeight:700,fontFamily:"'DM Mono', monospace"}}>{toINR(v)}</span>}},{key:"status",label:"Status",render:function(v){return <Badge color={v==="Paid"?C.green:C.red}>{v}</Badge>}}]} data={invoices} />}
+  </div>);
+}
+
 // MAIN APP
 export default function App() {
   var [user, setUser] = useState(null);
@@ -602,40 +648,7 @@ export default function App() {
   </div>); };
 
   var renderReports = function() {
-    // Report kitchen data for reportDate
-    var repKitchen = useMemo(function() {
-      var d = { veg: 0, nonveg: 0, chapathi: 0, total: 0, details: [] };
-      customers.forEach(function(c) {
-        var counts = getCounts(c, reportDate, overrides);
-        var t = totalMeals(counts);
-        d.veg += counts.veg; d.nonveg += counts.nonveg; d.chapathi += counts.chapathi; d.total += t;
-        d.details.push(Object.assign({}, c, { counts: counts, totalMeals: t }));
-      });
-      return d;
-    }, [customers, reportDate, overrides]);
-
-    var RTYPES = ["Kitchen", "Billing", "Customer", "Delivery", "Route", "Payments"];
-    var dateBar = <div style={{ display: "flex", gap: 12, marginBottom: 20, alignItems: "center", flexWrap: "wrap" }}>
-      <Inp label="From" value={reportDate} onChange={setReportDate} type="date" />
-      {(reportTab === "Billing" || reportTab === "Payments") && <Inp label="To" value={reportDateEnd} onChange={setReportDateEnd} type="date" />}
-    </div>;
-
-    return (<div>
-      <Header>Reports</Header>
-      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>{RTYPES.map(function(r){return <Btn key={r} small primary={reportTab===r} onClick={function(){setReportTab(r)}}>{r}</Btn>})}</div>
-      {dateBar}
-      {reportTab === "Kitchen" && <div>
-        {isSunday(reportDate) && <div style={{ padding: "12px 20px", background: C.red+"15", borderRadius: 10, marginBottom: 16, color: C.red, fontSize: 13, fontWeight: 600 }}>Sunday - No deliveries</div>}
-        <div style={{ display: "flex", gap: 16, marginBottom: 20, flexWrap: "wrap" }}><Stat label="Total" value={repKitchen.total} accent={C.accent} /><Stat label="Veg" value={repKitchen.veg} accent={C.green} /><Stat label="NV" value={repKitchen.nonveg} accent={C.red} /><Stat label="Ch" value={repKitchen.chapathi} accent={C.accent} /></div>
-        <Tbl columns={[{key:"id",label:"ID",render:function(v){return <Badge>{v}</Badge>}},{key:"name",label:"Office",render:function(v){return <span style={{fontWeight:600}}>{v}</span>}},{key:"counts",label:"V",render:function(v){return <span style={{color:C.green,fontWeight:700,fontFamily:"'DM Mono', monospace"}}>{v.veg}</span>}},{key:"_nv",label:"NV",render:function(v,r){return <span style={{color:C.red,fontWeight:700,fontFamily:"'DM Mono', monospace"}}>{r.counts.nonveg}</span>}},{key:"_ch",label:"Ch",render:function(v,r){return <span style={{color:C.accent,fontWeight:700,fontFamily:"'DM Mono', monospace"}}>{r.counts.chapathi}</span>}},{key:"totalMeals",label:"Total",render:function(v){return <span style={{fontWeight:700,fontFamily:"'DM Mono', monospace"}}>{v}</span>}},{key:"route",label:"Route"}]} data={repKitchen.details} />
-        <div style={{marginTop:12}}><Btn onClick={function(){exportCSV("kitchen_"+reportDate+".csv",["ID","Office","Veg","NV","Ch","Total","Route"],repKitchen.details.map(function(c){return [c.id,c.name,c.counts.veg,c.counts.nonveg,c.counts.chapathi,c.totalMeals,c.route]}))}}><Ico d={ICON.dl} s={14} /> Export</Btn></div>
-      </div>}
-      {reportTab === "Billing" && <Tbl columns={[{key:"id",label:"Invoice"},{key:"customer_id",label:"Customer",render:function(v){var c=customers.find(function(x){return x.id===v});return c?c.name:v}},{key:"period_label",label:"Period"},{key:"amount",label:"Amount",render:function(v){return toINR(v)}},{key:"status",label:"Status",render:function(v){return <Badge color={v==="Paid"?C.green:C.red}>{v}</Badge>}}]} data={invoices} />}
-      {reportTab === "Customer" && <Tbl columns={[{key:"id",label:"ID"},{key:"name",label:"Name"},{key:"route",label:"Route"},{key:"default_veg",label:"V",render:function(v){return v||0}},{key:"default_nonveg",label:"NV",render:function(v){return v||0}},{key:"default_chapathi",label:"Ch",render:function(v){return v||0}},{key:"billing_cycle",label:"Cycle"},{key:"no_saturday",label:"Sat Off",render:function(v){return v?<Badge color={C.purple}>Yes</Badge>:"-"}}]} data={customers} />}
-      {reportTab === "Delivery" && <Tbl columns={[{key:"id",label:"ID"},{key:"name",label:"Office"},{key:"route",label:"Route"},{key:"counts",label:"Meals",render:function(v){return <MealCounts counts={v} />}},{key:"totalMeals",label:"Total",render:function(v){return <span style={{fontWeight:700,fontFamily:"'DM Mono', monospace"}}>{v}</span>}}]} data={repKitchen.details} />}
-      {reportTab === "Route" && Object.entries(function(){var g={};customers.forEach(function(c){if(!g[c.route])g[c.route]=[];var counts=getCounts(c,reportDate,overrides);g[c.route].push(Object.assign({},c,{counts:counts,totalMeals:totalMeals(counts)}))});return g}()).map(function(e){return (<Card key={e[0]} style={{marginBottom:16}}><div style={{fontWeight:700,marginBottom:12}}>{e[0]+" - "+e[1].length+" customers | "+e[1].reduce(function(s,c){return s+c.totalMeals},0)+" meals"}</div><Tbl columns={[{key:"name",label:"Office"},{key:"counts",label:"Meals",render:function(v){return <MealCounts counts={v} />}},{key:"totalMeals",label:"Total"}]} data={e[1]} /></Card>)})}
-      {reportTab === "Payments" && <Tbl columns={[{key:"id",label:"Invoice"},{key:"customer_id",label:"Customer",render:function(v){var c=customers.find(function(x){return x.id===v});return c?c.name:v}},{key:"amount",label:"Amount",render:function(v){return <span style={{fontWeight:700,fontFamily:"'DM Mono', monospace"}}>{toINR(v)}</span>}},{key:"status",label:"Status",render:function(v){return <Badge color={v==="Paid"?C.green:C.red}>{v}</Badge>}}]} data={invoices} />}
-    </div>);
+    return <ReportsTab customers={customers} overrides={overrides} invoices={invoices} prices={prices} reportDate={reportDate} setReportDate={setReportDate} reportDateEnd={reportDateEnd} setReportDateEnd={setReportDateEnd} reportTab={reportTab} setReportTab={setReportTab} />;
   };
 
   if (authLoading) return <div style={{ height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:C.bg, fontFamily:"'DM Sans', sans-serif" }}><div style={{color:C.textDim}}>Loading...</div></div>;
