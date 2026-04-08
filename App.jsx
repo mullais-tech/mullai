@@ -283,6 +283,7 @@ export default function App() {
   var [reportTab, setReportTab] = useState("Kitchen");
   var [sidebar, setSidebar] = useState(window.innerWidth > 768);
   var [toast, setToast] = useState(null);
+  var [deleteConfirm, setDeleteConfirm] = useState(null);
 
   var showToast = function(msg, type) { setToast({ msg: msg, type: type || "success" }); setTimeout(function(){ setToast(null); }, 3000); };
 
@@ -376,10 +377,9 @@ export default function App() {
   };
 
   var deleteCustomer = async function(id) {
-    if (!confirm("Delete this customer?")) return;
     var res = await supabase.from("customers").delete().eq("id", id);
     if (res.error) { showToast("Error: " + res.error.message, "error"); return; }
-    showToast("Deleted"); loadAll();
+    showToast("Deleted"); setDeleteConfirm(null); loadAll();
   };
 
   var saveOverride = async function(custId, date, veg, nonveg, chapathi) {
@@ -584,11 +584,25 @@ export default function App() {
         ]} data={filtered} actions={function(row){return (
           <div style={{ display: "flex", gap: 8 }}>
             <Btn small onClick={function(){setEditCust(row);setModal("customer")}}><Ico d={ICON.edit} s={14} /></Btn>
-            <Btn small danger onClick={function(){deleteCustomer(row.id)}}><Ico d={ICON.trash} s={14} /></Btn>
+            <Btn small danger onClick={function(){setDeleteConfirm(row)}}><Ico d={ICON.trash} s={14} /></Btn>
           </div>
         )}} />
         {modal === "customer" && <Modal title={editCust && editCust.id ? "Edit " + editCust.name : "Add Customer"} onClose={function(){setModal(null);setEditCust(null)}}>
           <CustForm initial={editCust} onSave={saveCustomer} onCancel={function(){setModal(null);setEditCust(null)}} />
+        </Modal>}
+        {deleteConfirm && <Modal title="Confirm Delete" onClose={function(){setDeleteConfirm(null)}}>
+          <div style={{ textAlign: "center", padding: "20px 0" }}>
+            <div style={{ width: 56, height: 56, borderRadius: 16, background: C.red + "20", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+              <Ico d={ICON.trash} s={28} c={C.red} />
+            </div>
+            <h3 style={{ margin: "0 0 8px", color: C.text, fontSize: 18 }}>Delete {deleteConfirm.name}?</h3>
+            <p style={{ color: C.textDim, fontSize: 13, margin: "0 0 8px" }}>Customer ID: {deleteConfirm.id}</p>
+            <p style={{ color: C.red, fontSize: 13, margin: "0 0 24px", fontWeight: 600 }}>This will permanently delete all data for this customer including overrides and invoices. This cannot be undone.</p>
+            <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+              <Btn onClick={function(){setDeleteConfirm(null)}} style={{ minWidth: 120 }}>Cancel</Btn>
+              <Btn danger onClick={function(){deleteCustomer(deleteConfirm.id)}} style={{ minWidth: 120 }}>Yes, Delete</Btn>
+            </div>
+          </div>
         </Modal>}
       </div>
     );
